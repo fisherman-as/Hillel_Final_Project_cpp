@@ -17,6 +17,12 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+private slots:
+    void Start();
+    void Stop();
+    void Exit();
+    void SliderValueChanged(int value);
+
 private:
     Ui::MainWindow *ui;
 };
