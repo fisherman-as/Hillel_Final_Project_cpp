@@ -1,4 +1,9 @@
 #include "collatz.h"
+#include <thread>
+#include <vector>
+#include <chrono>
+
+extern bool stopRequested;
 
 CollatzSequence::CollatzSequence(size_t startNumber) : _numbersInSequence(0), _startNumber(startNumber) {
 }
@@ -32,4 +37,46 @@ size_t CollatzSequence::calculate() {
         this->_numbersInSequence++;
     }
     return this->_numbersInSequence;
+}
+
+void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber) {
+    for (size_t i = threadNumber; i < maxNumber; i += threadsCount) {
+        if (stopRequested) {
+            return;
+        }
+        CollatzSequence object(i);
+        size_t numbersAmount =  object.calculate();
+        std::lock_guard<std::mutex> guard(*threadsMutex);
+        if (numbersAmount > referenceObject->getNumbersInSequence()) {
+            *referenceObject = object;
+        }
+    }
+}
+
+CollatzSequence CollatzSequence::mainFunc(size_t maxNumber, int threadCount) {
+    std::mutex threadsMutex;
+    CollatzSequence referenceObject(2);
+    std::vector<std::thread> threads;
+    threads.reserve(threadCount);
+
+    for (int i = 0; i < threadCount; i++) {
+        threads.emplace_back(ThreadFunc, &threadsMutex, &referenceObject, maxNumber, threadCount, i);
+    }
+
+    for (int i = 0; i < threadCount; i++) {
+        threads[i].join();
+    }
+    return referenceObject;
+}
+
+CollatzWorker::CollatzWorker(QObject* parent) : QObject(parent) {
+}
+
+void CollatzWorker::run(std::size_t maxNumber, int threadCount) {
+    auto startTime = std::chrono::high_resolution_clock::now();
+    CollatzSequence result = CollatzSequence::mainFunc(maxNumber, threadCount);
+    auto endTime = std::chrono::high_resolution_clock::now();
+    std::size_t time = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    emit finished(result.getStartNumber(), result.getNumbersInSequence(), time);
 }
