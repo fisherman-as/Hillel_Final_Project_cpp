@@ -21,7 +21,7 @@ public:
 
 signals:
     void startCalculationSignal(std::size_t maxNumber, int threadCount);
-    void finishedSignal(bool stopRequested);
+    void stopCalculationSignal();
 
 private slots:
     void Start();
@@ -29,7 +29,7 @@ private slots:
     void Exit();
     void SliderValueChanged();
     void calculationFinished(std::size_t startNumber, std::size_t numbersInSequence, std::size_t time);
-    void calculationFinishedSlot(bool stopRequested);
+    void calculationStoppedSlot();
 
 private:
     Ui::MainWindow *ui;

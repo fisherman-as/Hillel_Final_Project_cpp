@@ -3,8 +3,6 @@
 #include <vector>
 #include <chrono>
 
-extern std::atomic<bool> stopRequested;
-
 CollatzSequence::CollatzSequence(size_t startNumber) : _numbersInSequence(0), _startNumber(startNumber) {
 }
 
@@ -22,10 +20,14 @@ size_t CollatzSequence::getNumbersInSequence() {
     return this->_numbersInSequence;
 }
 
-size_t CollatzSequence::calculate(std::atomic<std::size_t>* pAllNumbersArray) {
+size_t CollatzSequence::calculate(std::atomic<std::size_t>* pAllNumbersArray, std::atomic<bool>* stopRequested) {
     size_t number = this->_startNumber;
 
     while (number > 1) {
+        if (stopRequested->load())
+        {
+            return this->_numbersInSequence;
+        }
         if (number % 2 == 0) {
             number = number >> 1;
         } else {
@@ -47,13 +49,15 @@ size_t CollatzSequence::calculate(std::atomic<std::size_t>* pAllNumbersArray) {
     return this->_numbersInSequence;
 }
 
-void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber, std::atomic<std::size_t>* pAllNumbersArray) {
+void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject,
+                                 size_t maxNumber, int threadsCount,  int threadNumber,
+                                 std::atomic<std::size_t>* pAllNumbersArray, std::atomic<bool>* stopRequested) {
     for (size_t startNumber = threadNumber; startNumber <= maxNumber; startNumber += threadsCount) {
-        if (stopRequested.load()) {
+        if (stopRequested->load()) {
             return;
         }
         CollatzSequence object(startNumber);
-        size_t numbersAmount =  object.calculate(pAllNumbersArray);
+        size_t numbersAmount =  object.calculate(pAllNumbersArray, stopRequested);
         std::lock_guard<std::mutex> guard(*threadsMutex);
         if (numbersAmount > referenceObject->getNumbersInSequence()) {
             *referenceObject = object;
@@ -61,7 +65,7 @@ void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* refe
     }
 }
 
-CollatzSequence CollatzSequence::mainFunc(size_t maxNumber, int threadCount) {
+CollatzSequence CollatzSequence::mainFunc(size_t maxNumber, int threadCount, std::atomic<bool>* stopRequested) {
     std::mutex threadsMutex;
     std::atomic<std::size_t>* pAllNumbersArray = new std::atomic<std::size_t>[maxNumber + 1] {0};
     CollatzSequence referenceObject(2);
@@ -69,11 +73,11 @@ CollatzSequence CollatzSequence::mainFunc(size_t maxNumber, int threadCount) {
     threads.reserve(threadCount);
 
     for (int threadNumber = 1; threadNumber <= threadCount; threadNumber++) {
-        threads.emplace_back(ThreadFunc, &threadsMutex, &referenceObject, maxNumber, threadCount, threadNumber, pAllNumbersArray);
+        threads.emplace_back(ThreadFunc, &threadsMutex, &referenceObject, maxNumber, threadCount, threadNumber, pAllNumbersArray, stopRequested);
     }
 
-    for (int i = 0; i < threadCount; i++) {
-        threads[i].join();
+    for (auto& thread : threads) {
+        thread.join();
     }
     delete[] pAllNumbersArray;
     return referenceObject;
@@ -83,10 +87,21 @@ CollatzWorker::CollatzWorker(QObject* parent) : QObject(parent) {
 }
 
 void CollatzWorker::run(std::size_t maxNumber, int threadCount) {
+    stopRequested.store(false);
     auto startTime = std::chrono::high_resolution_clock::now();
-    CollatzSequence result = CollatzSequence::mainFunc(maxNumber, threadCount);
+    CollatzSequence result = CollatzSequence::mainFunc(maxNumber, threadCount, &stopRequested);
     auto endTime = std::chrono::high_resolution_clock::now();
     std::size_t time = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
+    if (stopRequested.load())
+    {
+        emit stopped();
+        return;
+    }
+
     emit finished(result.getStartNumber(), result.getNumbersInSequence(), time);
+}
+
+void CollatzWorker::stop() {
+    stopRequested.store(true);
 }

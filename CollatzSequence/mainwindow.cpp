@@ -4,8 +4,6 @@
 #include <thread>
 #include "collatz.h"
 
-std::atomic<bool> stopRequested = false;
-
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -35,9 +33,8 @@ MainWindow::MainWindow(QWidget *parent)
     //STOP BUTTON
     connect(ui->StopButton, &QPushButton::clicked, this, &MainWindow::Stop);
     ui->StopButton->setEnabled(false);
-    connect(this, &MainWindow::finishedSignal, this, &MainWindow::calculationFinishedSlot);
-    // connect(this, &MainWindow::finishedSignal, worker, &CollatzWorker::setStopRequested);
-    // connect(worker, &CollatzWorker::setStopRequested, worker, &CollatzWorker::setStopRequested);
+    connect(worker, &CollatzWorker::stopped, this, &MainWindow::calculationStoppedSlot);
+    connect(this, &MainWindow::stopCalculationSignal, worker, &CollatzWorker::stop, Qt::DirectConnection);
 }
 
 MainWindow::~MainWindow()
@@ -51,7 +48,6 @@ void MainWindow::Start() {
     ui->StartButton->setEnabled(false);
     ui->StopButton->setEnabled(true);
     ui->textBrowser->clear();
-    stopRequested = false;
 
     size_t maxNumber = ui->spinBox->value();
     int threadCount = ui->ThreadsQuantitySlider->value();
@@ -61,9 +57,7 @@ void MainWindow::Start() {
 
 void MainWindow::Stop() {
     ui->StopButton->setEnabled(false);
-    ui->StartButton->setEnabled(true);
-    stopRequested = true;
-    emit finishedSignal(stopRequested);
+    emit stopCalculationSignal();
 }
 
 void MainWindow::Exit() {
@@ -75,14 +69,16 @@ void MainWindow::SliderValueChanged() {
 }
 
 void MainWindow::calculationFinished(std::size_t startNumber, std::size_t numbersInSequence, std::size_t time) {
-    if (!stopRequested) {
-        ui->textBrowser->setText(QString("The number with the longest Collatz sequence:\n""Start number: %1\n"
-                                         "Sequence length: %2\n""Time: %3 ms\n").arg(startNumber).arg(numbersInSequence).arg(time));
-    }
+    ui->textBrowser->setText(QString("The number with the longest Collatz sequence:\n"
+                                     "Start number: %1\n"
+                                     "Sequence length: %2\n"
+                                     "Time: %3 ms\n").arg(startNumber).arg(numbersInSequence).arg(time));
     ui->StartButton->setEnabled(true);
     ui->StopButton->setEnabled(false);
 }
 
-void MainWindow::calculationFinishedSlot(bool stopRequested) {
+void MainWindow::calculationStoppedSlot() {
     ui->textBrowser->setText(QString("Stopped by user...\n"));
+    ui->StartButton->setEnabled(true);
+    ui->StopButton->setEnabled(false);
 }
