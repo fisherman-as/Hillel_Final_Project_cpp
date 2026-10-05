@@ -13,14 +13,14 @@ public:
     CollatzSequence& operator=(const CollatzSequence& other);
     size_t getNumbersInSequence();
     size_t getStartNumber() {return this->_startNumber;}
-    size_t calculate();
+    size_t calculate(std::atomic<std::size_t>* pAllNumbersArray);
     size_t const static MAXNUM = static_cast<size_t>((SIZE_MAX - 1) / 3);
-    static void ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber);
+    static void ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber, std::atomic<std::size_t>* pAllNumbersArray);
     static CollatzSequence mainFunc(size_t maxNumber, int threadCount);
 
 private:
     size_t _startNumber;
-    size_t _numbersInSequence = 0;
+    size_t _numbersInSequence = 1;
     bool _overFlow = false;
 };
 

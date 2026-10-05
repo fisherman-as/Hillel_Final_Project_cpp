@@ -3,7 +3,7 @@
 #include <vector>
 #include <chrono>
 
-extern bool stopRequested;
+extern std::atomic<bool> stopRequested;
 
 CollatzSequence::CollatzSequence(size_t startNumber) : _numbersInSequence(0), _startNumber(startNumber) {
 }
@@ -22,30 +22,38 @@ size_t CollatzSequence::getNumbersInSequence() {
     return this->_numbersInSequence;
 }
 
-size_t CollatzSequence::calculate() {
-    size_t result = this->_startNumber;
-    while (result > 1) {
-        if (result % 2 == 0) {
-            result = result / 2;
+size_t CollatzSequence::calculate(std::atomic<std::size_t>* pAllNumbersArray) {
+    size_t number = this->_startNumber;
+
+    while (number > 1) {
+        if (number % 2 == 0) {
+            number = number >> 1;
         } else {
-            if (result > MAXNUM) {
+            if (number > MAXNUM) {
                 this->_overFlow = true;
                 return this->_numbersInSequence;
             }
-            result = 3 * result + 1;
+            number = 3 * number + 1;
         }
         this->_numbersInSequence++;
+
+        if (number < this->_startNumber && number > 4 && pAllNumbersArray[number] != 0) {
+            this->_numbersInSequence += pAllNumbersArray[number];
+            return this->_numbersInSequence;
+        }
     }
+
+    pAllNumbersArray[this->_startNumber] = this->_numbersInSequence;
     return this->_numbersInSequence;
 }
 
-void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber) {
-    for (size_t i = threadNumber; i < maxNumber; i += threadsCount) {
-        if (stopRequested) {
+void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* referenceObject, size_t maxNumber, int threadsCount,  int threadNumber, std::atomic<std::size_t>* pAllNumbersArray) {
+    for (size_t startNumber = threadNumber; startNumber <= maxNumber; startNumber += threadsCount) {
+        if (stopRequested.load()) {
             return;
         }
-        CollatzSequence object(i);
-        size_t numbersAmount =  object.calculate();
+        CollatzSequence object(startNumber);
+        size_t numbersAmount =  object.calculate(pAllNumbersArray);
         std::lock_guard<std::mutex> guard(*threadsMutex);
         if (numbersAmount > referenceObject->getNumbersInSequence()) {
             *referenceObject = object;
@@ -55,17 +63,19 @@ void CollatzSequence::ThreadFunc(std::mutex* threadsMutex, CollatzSequence* refe
 
 CollatzSequence CollatzSequence::mainFunc(size_t maxNumber, int threadCount) {
     std::mutex threadsMutex;
+    std::atomic<std::size_t>* pAllNumbersArray = new std::atomic<std::size_t>[maxNumber + 1] {0};
     CollatzSequence referenceObject(2);
     std::vector<std::thread> threads;
     threads.reserve(threadCount);
 
-    for (int i = 0; i < threadCount; i++) {
-        threads.emplace_back(ThreadFunc, &threadsMutex, &referenceObject, maxNumber, threadCount, i);
+    for (int threadNumber = 1; threadNumber <= threadCount; threadNumber++) {
+        threads.emplace_back(ThreadFunc, &threadsMutex, &referenceObject, maxNumber, threadCount, threadNumber, pAllNumbersArray);
     }
 
     for (int i = 0; i < threadCount; i++) {
         threads[i].join();
     }
+    delete[] pAllNumbersArray;
     return referenceObject;
 }
 
